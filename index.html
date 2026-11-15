@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Timing-Coach</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root{--bg:#f6f5f1;--panel:#fff;--ink:#1d1d1b;--mute:#6b6a65;--line:#dcdad3;--wave:#b9b6ab;--H:#2563eb;--V:#9333ea;--M:#ea580c;--F:#16a34a;--good:#15803d;--warn:#b45309;--bad:#b91c1c}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161614;--panel:#1f1f1c;--ink:#ecebe6;--mute:#9b998f;--line:#35342f;--wave:#5a584f;--H:#60a5fa;--V:#c084fc;--M:#fb923c;--F:#4ade80;--good:#4ade80;--warn:#fbbf24;--bad:#f87171;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#161614;--panel:#1f1f1c;--ink:#ecebe6;--mute:#9b998f;--line:#35342f;--wave:#5a584f;--H:#60a5fa;--V:#c084fc;--M:#fb923c;--F:#4ade80;--good:#4ade80;--warn:#fbbf24;--bad:#f87171;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding-block:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));border-bottom:1px solid var(--line)}
+h1{font-size:18px;margin:0 auto 0 0}
+h2{font-size:14px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute)}
+button,.btn{font:inherit;padding:7px 12px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);cursor:pointer}
+button.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button.rec{background:var(--bad);color:#fff;border-color:var(--bad)}
+main>*{min-width:0}
+main{display:grid;grid-template-columns:minmax(0,3fr) minmax(300px,2fr);gap:16px;padding-block:16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:16px}
+video{width:100%;max-height:46vh;background:#000;border-radius:8px;display:block}
+canvas{width:100%;display:block;border-radius:6px;background:var(--bg);cursor:pointer;margin-top:8px}
+#detail{height:110px}#overview{height:44px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.key{display:inline-block;min-width:22px;text-align:center;padding:1px 6px;border:1px solid var(--line);border-radius:5px;font:12px ui-monospace,monospace;background:var(--bg)}
+.mk{font-weight:600}.mk.H{color:var(--H)}.mk.V{color:var(--V)}.mk.M{color:var(--M)}.mk.F{color:var(--F)}
+.mute{color:var(--mute);font-size:13px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:14px}
+th,td{padding:5px 6px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:500;color:var(--mute);font-size:12px}
+td:first-child,th:first-child{text-align:left}
+tbody tr{cursor:pointer}
+.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad);font-weight:600}
+.tablewrap{overflow-x:auto}
+#summary p{margin:0 0 8px}
+#banner{position:fixed;left:0;right:0;top:0;padding:calc(22px + env(safe-area-inset-top,0px)) 22px 22px;text-align:center;font-size:28px;font-weight:700;background:var(--bad);color:#fff;z-index:9;display:none}
+label{display:block;margin-top:8px;font-size:13px;color:var(--mute)}
+input[type=text]{width:100%;font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+.check{display:flex;gap:8px;align-items:flex-start;color:var(--ink);font-size:14px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div id="banner"></div>
+<header>
+  <h1>Timing-Coach</h1>
+  <label class="btn" style="margin:0;color:var(--ink);font-size:15px">Video laden<input id="file" type="file" accept="video/*,audio/*" hidden></label>
+  <button id="liveBtn" class="primary">Live-Training starten</button>
+</header>
+<p id="note" class="mute" style="margin:8px 16px 0" hidden></p>
+
+<main>
+<section>
+  <div class="panel">
+    <video id="vid" playsinline></video>
+    <div id="work" hidden>
+      <canvas id="detail"></canvas>
+      <canvas id="overview"></canvas>
+      <div class="row">
+        <button id="play">Start/Pause</button>
+        <button data-step="-1" aria-label="ein Bild zurück">◀ Bild</button><button data-step="1" aria-label="ein Bild vor">Bild ▶</button>
+        <button data-rate="0.25">¼×</button><button data-rate="0.5">½×</button><button data-rate="1">1×</button>
+        <span class="mute" id="clock"></span>
+      </div>
+      <div class="row">
+        <button data-mark="H" class="mk H">H Hörzeichen</button>
+        <button data-mark="V" class="mk V">V Verhalten</button>
+        <button data-mark="M" class="mk M">M Marker</button>
+        <button data-mark="F" class="mk F">F Futter</button>
+        <button id="del">Marke löschen</button>
+      </div>
+      <div class="row">
+        <button id="autoM">Erkannte Klicks als Marker übernehmen</button>
+        <span class="mute">Empfindlichkeit</span><input id="sens" type="range" min="2" max="20" value="14">
+        <label class="check" style="margin:0"><input id="snap" type="checkbox" checked> H und M am Geräusch einrasten</label>
+      </div>
+      <p class="mute" id="status"></p>
+    </div>
+    <div id="liveBox" hidden>
+      <p id="liveStatus" style="font-size:18px;font-weight:600;margin:12px 0 4px"></p>
+      <p class="mute" id="liveLog"></p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Bedienung</h2>
+    <p class="mute" style="margin:0">
+      <span class="key">Leertaste</span> Start/Pause ·
+      <span class="key">←</span><span class="key">→</span> ein Bild zurück/vor ·
+      <span class="key">⇧←</span><span class="key">⇧→</span> ½ Sekunde ·
+      <span class="key">H</span><span class="key">V</span><span class="key">M</span><span class="key">F</span> Marke setzen ·
+      <span class="key">⌫</span> nächste Marke löschen.<br>
+      Am genauesten: Video anhalten, Bild für Bild zu dem Moment gehen, in dem der Hund das Verhalten zeigt (V) bzw. das Futter beim Hund ankommt (F). Marker und Hörzeichen rasten an der Tonspur ein.
+    </p>
+  </div>
+</section>
+
+<aside>
+  <div class="panel">
+    <h2>Kurzanalyse</h2>
+    <div id="summary"><p class="mute">Lade ein Trainingsvideo oder starte ein Live-Training. Die Analyse erscheint, sobald Marken gesetzt sind.</p></div>
+  </div>
+  <div class="panel">
+    <h2>Wiederholungen</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>#</th><th>Beginn</th><th>Zusatz&shy;signale</th><th>Signal→Verh.</th><th>Verh.→Marker</th><th>Marker→Futter</th></tr></thead>
+      <tbody id="reps"></tbody>
+    </table></div>
+    <p class="mute">Richtwerte für Verhalten→Marker (ohne Marker: Verhalten→Futter): grün bis 0,5 s, gelb bis 1 s, rot darüber. Die Stufen sind eine Arbeitshilfe; belegt ist, dass schon 1 s Verzögerung das Lernen deutlich verschlechtert.</p>
+    <div class="row"><button id="csv">Tabelle als CSV</button><button id="json">Marken als JSON</button><a id="dl" class="btn" hidden>Aufnahme speichern</a></div>
+  </div>
+  <div class="panel">
+    <h2>Live-Hinweise einstellen</h2>
+    <label>Hörzeichen (durch Komma getrennt)<input id="cueWords" type="text" value="sitz, platz, steh, fuß, hier, bleib, apport, voran, box"></label>
+    <label>Markerwörter<input id="markerWords" type="text" value="fein, top, yes"></label>
+    <label class="check"><input id="optSpeech" type="checkbox"> <span>Spracherkennung nutzen, um wiederholte Hörzeichen und Gerede vor dem Signal sofort zu melden. Dabei schickt der Browser deine Stimme an den Sprachdienst seines Herstellers (bei Chrome: Google).</span></label>
+    <label>Rückmeldung
+      <select id="fb" style="font:inherit;padding:5px"><option value="ton">kurzer Ton</option><option value="ansage">Ansage</option><option value="bild">nur Bildschirm</option></select>
+    </label>
+    <p class="mute">Tipp: Ton oder Ansage über einen Ohrstöpsel hören, damit der Hund sie nicht als Signal lernt.</p>
+  </div>
+</aside>
+</main>
+
+<script>
+const $=id=>document.getElementById(id), v=$('vid');
+const FRAME=1/30;
+const FB=500;let zc=null,floorLoc=null;
+let marks=[],hints=[],cands=[],env=null,hop=.002,envMax=1,envFloor=0,storeKey=null,live=null;
+
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt=s=>s==null?'–':(s<0?'−':'')+Math.abs(s).toFixed(2).replace('.',',')+' s';
+const clock=t=>{const m=Math.floor(t/60);return m+':'+(t-m*60).toFixed(2).padStart(5,'0')};
+const median=a=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
+const status=t=>$('status').textContent=t;
+const dur=()=>isFinite(v.duration)?v.duration:(env?env.length*hop:0);
+const list=id=>$(id).value.toLowerCase().split(/[,;\s]+/).filter(Boolean);
+function save(){if(storeKey)try{localStorage.setItem(storeKey,JSON.stringify({marks,hints}))}catch{}}
+
+/* ---------- Laden und Tonspur ---------- */
+async function loadBlob(blob,name,keepHints){
+  storeKey='tc:'+name+':'+blob.size;marks=[];if(!keepHints)hints=[];cands=[];env=null;
+  try{const s=JSON.parse(localStorage.getItem(storeKey)||'null');if(s){marks=s.marks||[];if(!keepHints)hints=s.hints||[]}}catch{}
+  v.srcObject=null;v.muted=false;v.src=URL.createObjectURL(blob);
+  $('work').hidden=false;$('liveBox').hidden=true;status('Tonspur wird analysiert …');render();
+  try{
+    const ac=new (window.AudioContext||window.webkitAudioContext)();
+    const buf=await ac.decodeAudioData(await blob.arrayBuffer());ac.close();
+    analyse(buf);detect();
+  }catch(e){status('Die Tonspur konnte nicht gelesen werden. Marken von Hand setzen geht trotzdem.')}
+  render();
+}
+function analyse(buf){
+  const x=buf.getChannelData(0),hopN=Math.round(buf.sampleRate*.002);hop=hopN/buf.sampleRate;
+  const n=Math.floor(x.length/hopN);env=new Float32Array(n);zc=new Uint8Array(n);envMax=1e-9;
+  for(let i=0;i<n;i++){let s=0,z=0;for(let j=0;j<hopN;j++){const a=x[i*hopN+j];s+=a*a;if(j&&(a>0)!==(x[i*hopN+j-1]>0))z++}
+    env[i]=Math.sqrt(s/hopN);zc[i]=Math.min(255,z);if(env[i]>envMax)envMax=env[i]}
+  envFloor=Float32Array.from(env).sort()[n>>1];
+  /* Grundrauschen je Sekunde aus dem Umfeld von +-3 s, damit leise und geschnittene Aufnahmen funktionieren */
+  const nb=Math.ceil(n/FB);floorLoc=new Float32Array(nb);
+  for(let b=0;b<nb;b++){const t=[];for(let i=Math.max(0,(b-3)*FB),e=Math.min(n,(b+4)*FB);i<e;i+=5)t.push(env[i]);t.sort((p,q)=>p-q);floorLoc[b]=t[Math.floor(t.length*.3)]}
+}
+function detect(){
+  cands=[];if(!env)return;
+  const f=Math.max(2,20-$('sens').value),n=env.length;let i=0;
+  while(i<n){
+    const thr=Math.max(floorLoc[Math.floor(i/FB)]*f,1e-4);
+    if(env[i]<=thr){i++;continue}
+    const s=i;let e=i,q=0;
+    while(i<n&&q<60){if(env[i]>thr){e=i;q=0}else q++;i++}
+    let pk=0,early=0,z=0,c=0;
+    for(let k=s;k<=Math.min(e,s+50);k++)pk=Math.max(pk,env[k]);
+    for(let k=s;k<=Math.min(e,s+5);k++)early=Math.max(early,env[k]);
+    for(let k=s;k<=Math.min(e,s+10);k++){z+=zc[k];c++}
+    const d=(e-s+1)*hop,sharp=early>=.5*pk&&d<=.4;
+    /* scharf und hell = Klick; scharf und dumpf = Schritt, Schlag o. Ae.; sonst Stimme */
+    cands.push({t:s*hop,d,kind:sharp?(z/c/(2*hop)>=2500?'click':'thud'):'voice'});
+  }
+  const k=q=>cands.filter(c=>c.kind===q).length;
+  status(`Erkannt: ${k('click')} helle Klicks, ${k('voice')} Stimm-Einsätze, ${k('thud')} dumpfe Geräusche (Schritte o. Ä., werden ignoriert).`+
+    (20*Math.log10(envFloor+1e-9)<-50?' Der Ton ist sehr leise: Ein Mikrofon nah bei dir verbessert die Erkennung deutlich.':''));
+}
+
+/* ---------- Marken ---------- */
+function addMark(type,t){
+  if((type==='H'||type==='M')&&$('snap').checked){
+    let best=null;for(const c of cands){if(c.kind==='thud')continue;const d=Math.abs(c.t-t);if(d<.25&&(!best||d<Math.abs(best.t-t)))best=c}
+    if(best)t=best.t;
+  }
+  marks.push({type,t:+t.toFixed(3)});marks.sort((a,b)=>a.t-b.t);save();render();
+}
+function delMark(){
+  const t=v.currentTime;let bi=-1;
+  marks.forEach((m,i)=>{if(Math.abs(m.t-t)<.3&&(bi<0||Math.abs(m.t-t)<Math.abs(marks[bi].t-t)))bi=i});
+  if(bi>=0){marks.splice(bi,1);save();render()}
+}
+function reps(){
+  const out=[];let r=null;const close=()=>{if(r)out.push(r);r={H:[]}};close();
+  for(const m of marks){
+    if(m.type==='H'){if(r.V!=null||r.M!=null||r.F!=null)close();r.H.push(m.t)}
+    else if(m.type==='V'){if(r.V!=null||r.M!=null||r.F!=null)close();r.V=m.t}
+    else if(m.type==='M'){if(r.M!=null||r.F!=null)close();r.M=m.t}
+    else{if(r.F!=null)close();r.F=m.t}
+  }
+  close();
+  return out.filter(r=>r.H.length||r.V!=null||r.M!=null||r.F!=null).map(r=>{
+    const d=(a,b)=>a!=null&&b!=null?b-a:null;
+    return{start:Math.min(...[r.H[0],r.V,r.M,r.F].filter(x=>x!=null)),extra:Math.max(0,r.H.length-1),
+      react:d(r.H[0],r.V),vm:d(r.V,r.M),mf:d(r.M,r.F),vf:d(r.V,r.F),hasM:r.M!=null};
+  });
+}
+const grade=x=>x==null?'':x<0?'bad':x<=.5?'good':x<=1?'warn':'bad';
+
+/* ---------- Auswertung ---------- */
+function render(){
+  const R=reps(),tb=$('reps');tb.innerHTML='';
+  R.forEach((r,i)=>{
+    const key=r.hasM?r.vm:r.vf,tr=document.createElement('tr');
+    tr.innerHTML=`<td>${i+1}</td><td>${clock(r.start)}</td><td class="${r.extra?'bad':''}">${r.extra||'–'}</td><td>${fmt(r.react)}</td>`+
+      `<td class="${r.hasM?grade(r.vm):''}">${fmt(r.vm)}</td><td class="${r.hasM?'':grade(r.vf)}">${r.hasM?fmt(r.mf):fmt(r.vf)+' ab Verh.'}</td>`;
+    tr.onclick=()=>{v.currentTime=Math.max(0,r.start-.5)};tb.appendChild(tr);
+  });
+  $('summary').innerHTML=summary(R).map(p=>`<p>${p}</p>`).join('');
+}
+function summary(R){
+  if(!R.length&&!hints.length)return['<span class="mute">Noch keine Marken gesetzt.</span>'];
+  const out=[],lat=R.map(r=>r.hasM?r.vm:r.vf).filter(x=>x!=null),n=lat.length;
+  if(n){
+    const med=median(lat),late=lat.filter(x=>x>1).length,early=lat.filter(x=>x<0).length;
+    out.push(`<b>${n} Wiederholung${n>1?'en':''}</b> mit messbarer Rückmeldung. Sie kommt im Mittel <b class="${grade(med)}">${fmt(med)}</b> nach dem Verhalten`+
+      (med<0?' – also zu früh.':med<=.5?' – das ist prompt.':med<=1?' – knapp. Ziel ist unter einer halben Sekunde.':' – zu spät. Der Hund verknüpft sie dann leicht mit dem, was er danach tut.'));
+    if(late&&med<=1)out.push(`Bei ${late} von ${n} lag mehr als eine Sekunde dazwischen.`);
+    if(early)out.push(`${early}-mal kam die Rückmeldung vor dem Verhalten. Prüfe, ob du die Absicht statt der Ausführung markierst.`);
+  }
+  const mf=median(R.map(r=>r.mf).filter(x=>x!=null));
+  if(mf!=null)out.push(`Das Futter folgt im Mittel ${fmt(mf)} nach dem Marker.`);
+  const rx=median(R.map(r=>r.react).filter(x=>x!=null));
+  if(rx!=null)out.push(`Der Hund reagiert im Mittel ${fmt(rx)} nach dem ersten Hörzeichen. Dieser Wert eignet sich für den Wochenvergleich.`);
+  const ex=R.filter(r=>r.extra).length;
+  if(ex)out.push(`In <b class="bad">${ex}</b> Wiederholung${ex>1?'en':''} hast du das Hörzeichen mehrfach gegeben. Im Ring kostet jedes Zusatzkommando Noten.`);
+  if(hints.length){
+    const c={};hints.forEach(h=>{const k=h.text.split(':')[0];c[k]=(c[k]||0)+1});
+    out.push('Live-Hinweise in dieser Einheit: '+Object.entries(c).map(([k,n])=>`${n}× ${k}`).join(', ')+'.');
+  }
+  return out;
+}
+
+/* ---------- Zeitleiste ---------- */
+function strip(c,t0,t1,labels){
+  const dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;
+  if(c.width!==Math.round(w*dpr)){c.width=Math.round(w*dpr);c.height=Math.round(h*dpr)}
+  const g=c.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,w,h);
+  c._t0=t0;c._t1=t1;const X=t=>(t-t0)/(t1-t0)*w;
+  if(env){
+    g.fillStyle=css('--wave');const n=env.length;
+    for(let px=0;px<w;px++){
+      const a=Math.max(0,Math.floor((t0+px/w*(t1-t0))/hop)),b=Math.min(n-1,Math.floor((t0+(px+1)/w*(t1-t0))/hop));
+      let m=0;const st=Math.max(1,(b-a)>>6);for(let i=a;i<=b;i+=st)if(env[i]>m)m=env[i];
+      const bh=Math.max(1,m/envMax*(h-(labels?30:6)));g.fillRect(px,(h-bh)/2,1,bh);
+    }
+    for(const cd of cands){const x=X(cd.t);if(x<0||x>w||(cd.kind==='thud'&&!labels))continue;g.fillStyle=cd.kind==='click'?css('--M'):cd.kind==='voice'?css('--H'):css('--wave');g.fillRect(x-1,h-7,labels?Math.max(2,X(cd.t+cd.d)-x):2,5)}
+  }
+  g.font='600 12px sans-serif';
+  for(const m of marks){const x=X(m.t);if(x<0||x>w)continue;g.fillStyle=css('--'+m.type);g.fillRect(x-1,0,2,h-8);if(labels)g.fillText(m.type,x+4,12)}
+  for(const hi of hints){const x=X(hi.t);if(x<0||x>w)continue;g.fillStyle=css('--bad');g.fillText('!',x-2,labels?26:12)}
+  g.fillStyle=css('--ink');g.fillRect(X(v.currentTime)-.5,0,1,h);
+}
+function tick(){
+  if(!$('work').hidden){
+    const t=v.currentTime;strip($('detail'),t-3,t+3,true);strip($('overview'),0,dur()||1,false);
+    $('clock').textContent=clock(t)+' / '+clock(dur());
+  }
+  requestAnimationFrame(tick);
+}
+for(const id of['detail','overview'])$(id).onclick=e=>{const c=e.currentTarget,r=c.getBoundingClientRect();v.currentTime=Math.min(dur(),Math.max(0,c._t0+(e.clientX-r.left)/r.width*(c._t1-c._t0)))};
+
+/* ---------- Bedienung ---------- */
+const toggle=()=>v.paused?v.play():v.pause();
+$('play').onclick=toggle;$('del').onclick=delMark;
+document.querySelectorAll('[data-rate]').forEach(b=>b.onclick=()=>v.playbackRate=+b.dataset.rate);
+document.querySelectorAll('[data-mark]').forEach(b=>b.onclick=()=>addMark(b.dataset.mark,v.currentTime));
+document.querySelectorAll('[data-step]').forEach(b=>b.onclick=()=>{v.pause();v.currentTime=Math.min(dur(),Math.max(0,v.currentTime+b.dataset.step*FRAME))});
+$('sens').oninput=detect;
+$('autoM').onclick=()=>{let n=0;for(const c of cands)if(c.kind==='click'&&!marks.some(m=>m.type==='M'&&Math.abs(m.t-c.t)<.05)){marks.push({type:'M',t:+c.t.toFixed(3)});n++}
+  marks.sort((a,b)=>a.t-b.t);save();render();status(n+' Marker übernommen.')};
+addEventListener('keydown',e=>{
+  if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)&&e.target.type!=='range'&&e.target.type!=='checkbox')return;
+  if($('work').hidden)return;
+  const k=e.key.toUpperCase();
+  if(e.key===' '){toggle()}
+  else if(e.key==='ArrowLeft'||e.key==='ArrowRight'){v.pause();v.currentTime=Math.min(dur(),Math.max(0,v.currentTime+(e.key==='ArrowLeft'?-1:1)*(e.shiftKey?.5:FRAME)))}
+  else if('HVMF'.includes(k)&&k.length===1&&!e.metaKey&&!e.ctrlKey){addMark(k,v.currentTime)}
+  else if(e.key==='Backspace'||e.key==='Delete'){delMark()}
+  else return;
+  e.preventDefault();
+});
+$('file').onchange=e=>{const f=e.target.files[0];if(f)loadBlob(f,f.name)};
+v.addEventListener('loadedmetadata',()=>{if(v.duration===Infinity){v.currentTime=1e101;v.addEventListener('timeupdate',function f(){v.removeEventListener('timeupdate',f);v.currentTime=0})}});
+async function download(name,text,type){
+  const d=await (window.claude&&window.claude.use?window.claude.use('downloads'):null);
+  if(d){try{await d.save({filename:name,data:text})}catch(e){if(e&&e.code!=='declined')status('Speichern ist hier nicht möglich.')}return}
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();
+}
+const num=x=>x==null?'':x.toFixed(3);
+$('csv').onclick=()=>download('timing.csv','Nr;Beginn_s;Zusatzsignale;Signal_Verhalten_s;Verhalten_Marker_s;Marker_Futter_s;Verhalten_Futter_s\n'+
+  reps().map((r,i)=>[i+1,num(r.start),r.extra,num(r.react),num(r.vm),num(r.mf),num(r.vf)].join(';')).join('\n'),'text/csv');
+$('json').onclick=()=>download('marken.json',JSON.stringify({marks,hints},null,1),'application/json');
+
+/* ---------- Live-Training ---------- */
+const liveTime=()=>(performance.now()-live.t0)/1000;
+function hint(text,t){
+  live.hints.push({t:+t.toFixed(2),text});
+  const b=$('banner');b.textContent=text;b.style.display='block';clearTimeout(b._h);b._h=setTimeout(()=>b.style.display='none',1800);
+  $('liveLog').textContent=live.hints.slice(-3).map(h=>clock(h.t)+' '+h.text).join(' · ');
+  const mode=$('fb').value;
+  if(mode==='ton'&&live.ac){const o=live.ac.createOscillator(),g=live.ac.createGain();o.frequency.value=220;g.gain.value=.25;o.connect(g).connect(live.ac.destination);o.start();o.stop(live.ac.currentTime+.18)}
+  if(mode==='ansage'&&window.speechSynthesis){const u=new SpeechSynthesisUtterance(text.split(':')[0]);u.lang='de-DE';u.rate=1.2;speechSynthesis.speak(u)}
+}
+function onWord(w,t){
+  const cues=list('cueWords'),mk=list('markerWords'),ev=live.ev;
+  if(mk.includes(w)){ev.push({k:'marker',t});return}
+  if(!cues.includes(w)){ev.push({k:'word',t});return}
+  let prev=null;for(let i=ev.length-1;i>=0;i--)if(ev[i].k==='cue'&&ev[i].w===w){prev=ev[i];break}
+  if(prev&&t-prev.t<4&&!ev.some(e=>e.k==='marker'&&e.t>prev.t))hint('Signal wiederholt: '+w,t);
+  else if(ev.filter(e=>e.k==='word'&&t-e.t<2).length>=2)hint('Gerede vor dem Signal',t);
+  ev.push({k:'cue',w,t});
+}
+function startSpeech(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){$('liveLog').textContent='Spracherkennung ist in diesem Browser nicht verfügbar.';return}
+  const r=new SR(),seen={};r.lang='de-DE';r.continuous=true;r.interimResults=true;
+  r.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){
+    const w=e.results[i][0].transcript.toLowerCase().match(/[a-zäöüß]+/g)||[],k=seen[i]||0;
+    for(let j=k;j<w.length;j++)onWord(w[j],liveTime());seen[i]=Math.max(k,w.length)}};
+  r.onend=()=>{if(live&&live.sr===r){for(const k in seen)delete seen[k];try{r.start()}catch{}}};
+  r.onerror=e=>{if(/not-allowed/.test(e.error))$('liveLog').textContent='Spracherkennung wurde nicht erlaubt.'};
+  r.start();live.sr=r;
+}
+function listen(){
+  const L=live;if(!L)return;L.an.getFloatTimeDomainData(L.buf);
+  let pk=0,s=0;for(const a of L.buf){const b=Math.abs(a);if(b>pk)pk=b;s+=a*a}
+  const rms=Math.sqrt(s/L.buf.length);L.hist.push(rms);if(L.hist.length>150)L.hist.shift();
+  const t=liveTime();
+  if(pk>Math.max(.08,8*median(L.hist))&&pk/rms>4.5&&t-L.lastClick>.25){L.lastClick=t;L.clicks++;L.ev.push({k:'marker',t})}
+  $('liveStatus').textContent=`Aufnahme läuft · ${clock(t)} · ${L.clicks} Klicks · ${L.hints.length} Hinweise`;
+}
+async function startLive(){
+  let stream;
+  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',frameRate:30},audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})}
+  catch(e){const n=$('note');n.textContent='Kamera und Mikrofon sind hier nicht verfügbar oder wurden nicht erlaubt. Nimm das Training mit der Kamera-App auf und lade das Video über „Video laden“.';n.hidden=false;return}
+  v.pause();v.removeAttribute('src');v.srcObject=stream;v.muted=true;v.play();
+  const ac=new (window.AudioContext||window.webkitAudioContext)(),an=ac.createAnalyser();an.fftSize=2048;ac.createMediaStreamSource(stream).connect(an);
+  ac.resume().catch(()=>{});let lock=null;try{lock=await navigator.wakeLock.request('screen')}catch{}
+  const rec=new MediaRecorder(stream),chunks=[];rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);rec.start(1000);
+  live={stream,rec,chunks,ac,an,buf:new Float32Array(2048),hist:[],ev:[],hints:[],clicks:0,lastClick:-9,lock,t0:performance.now()};
+  live.timer=setInterval(listen,20);
+  if($('optSpeech').checked)startSpeech();
+  $('work').hidden=true;$('liveBox').hidden=false;$('liveLog').textContent='';
+  $('liveBtn').textContent='Training beenden';$('liveBtn').className='rec';
+}
+function stopLive(){
+  const L=live;clearInterval(L.timer);
+  L.rec.onstop=()=>{
+    const blob=new Blob(L.chunks,{type:L.rec.mimeType}),ext=/mp4/.test(L.rec.mimeType)?'.mp4':'.webm';
+    const name='Training '+new Date().toLocaleString('de-DE').replace(/[.:,\s]+/g,'-')+ext;
+    L.stream.getTracks().forEach(t=>t.stop());L.ac.close();if(L.lock)L.lock.release().catch(()=>{});
+    hints=L.hints;const a=$('dl');a.href=URL.createObjectURL(blob);a.download=name;a.hidden=false;
+    loadBlob(blob,name,true).then(save);
+  };
+  live=null;if(L.sr)try{L.sr.stop()}catch{}
+  L.rec.stop();$('liveBtn').textContent='Live-Training starten';$('liveBtn').className='primary';
+}
+$('liveBtn').onclick=()=>live?stopLive():startLive();
+
+/* ---------- Start ---------- */
+const src=new URLSearchParams(location.search).get('src');
+if(src)fetch(src).then(r=>r.blob()).then(b=>loadBlob(b,src));
+window.tc={get cands(){return cands},get marks(){return marks},get hints(){return live?live.hints:hints},reps,addMark,onWord,
+  fakeLive(){live={ev:[],hints:[],t0:performance.now()}},endFake(){hints=live.hints;live=null;render()},clear(){marks=[];render()}};
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
