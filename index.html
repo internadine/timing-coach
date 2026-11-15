@@ -74,6 +74,7 @@ input[type=text]{width:100%;font:inherit;padding:6px 8px;border:1px solid var(--
       </div>
       <div class="row">
         <button id="autoM">Erkannte Klicks als Marker übernehmen</button>
+        <button id="bodyBtn">Körperhilfen prüfen</button><button id="pickBtn">Person wählen</button>
         <span class="mute">Empfindlichkeit</span><input id="sens" type="range" min="2" max="20" value="14">
         <label class="check" style="margin:0"><input id="snap" type="checkbox" checked> H und M am Geräusch einrasten</label>
       </div>
@@ -106,10 +107,10 @@ input[type=text]{width:100%;font:inherit;padding:6px 8px;border:1px solid var(--
   <div class="panel">
     <h2>Wiederholungen</h2>
     <div class="tablewrap"><table>
-      <thead><tr><th>#</th><th>Beginn</th><th>Zusatz&shy;signale</th><th>Signal→Verh.</th><th>Verh.→Marker</th><th>Marker→Futter</th></tr></thead>
+      <thead><tr><th>#</th><th>Beginn</th><th>Zusatz&shy;signale</th><th>Signal→Verh.</th><th>Verh.→Marker</th><th>Marker→Futter</th><th>Körperhilfe</th></tr></thead>
       <tbody id="reps"></tbody>
     </table></div>
-    <p class="mute">Richtwerte für Verhalten→Marker (ohne Marker: Verhalten→Futter): grün bis 0,5 s, gelb bis 1 s, rot darüber. Die Stufen sind eine Arbeitshilfe; belegt ist, dass schon 1 s Verzögerung das Lernen deutlich verschlechtert.</p>
+    <p class="mute">Richtwerte für Verhalten→Marker (ohne Marker: Verhalten→Futter): grün bis 0,5 s, gelb bis 1 s, rot darüber. Die Stufen sind eine Arbeitshilfe; belegt ist, dass schon 1 s Verzögerung das Lernen deutlich verschlechtert.<br>Körperhilfe: Die App vergleicht deine Haltung in der Sekunde vor dem Hörzeichen mit der Bewegung beim Hörzeichen (Kopf, Hände, Oberkörper, Schultern). Die Schwellen sind erste Arbeitswerte und noch nicht an bewerteten Videos geprüft.</p>
     <div class="row"><button id="csv">Tabelle als CSV</button><button id="json">Marken als JSON</button><a id="dl" class="btn" hidden>Aufnahme speichern</a></div>
   </div>
   <div class="panel">
@@ -138,12 +139,12 @@ const median=a=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y),m=s.le
 const status=t=>$('status').textContent=t;
 const dur=()=>isFinite(v.duration)?v.duration:(env?env.length*hop:0);
 const list=id=>$(id).value.toLowerCase().split(/[,;\s]+/).filter(Boolean);
-function save(){if(storeKey)try{localStorage.setItem(storeKey,JSON.stringify({marks,hints}))}catch{}}
+function save(){if(storeKey)try{localStorage.setItem(storeKey,JSON.stringify({marks,hints,ref}))}catch{}}
 
 /* ---------- Laden und Tonspur ---------- */
 async function loadBlob(blob,name,keepHints){
-  storeKey='tc:'+name+':'+blob.size;marks=[];if(!keepHints)hints=[];cands=[];env=null;
-  try{const s=JSON.parse(localStorage.getItem(storeKey)||'null');if(s){marks=s.marks||[];if(!keepHints)hints=s.hints||[]}}catch{}
+  storeKey='tc:'+name+':'+blob.size;ref=null;pickMode=false;marks=[];if(!keepHints)hints=[];cands=[];env=null;
+  try{const s=JSON.parse(localStorage.getItem(storeKey)||'null');if(s){ref=s.ref||null;marks=s.marks||[];if(!keepHints)hints=s.hints||[]}}catch{}
   v.srcObject=null;v.muted=false;v.src=URL.createObjectURL(blob);
   $('work').hidden=false;$('liveBox').hidden=true;status('Tonspur wird analysiert …');render();
   try{
@@ -198,9 +199,9 @@ function delMark(){
   if(bi>=0){marks.splice(bi,1);save();render()}
 }
 function reps(){
-  const out=[];let r=null;const close=()=>{if(r)out.push(r);r={H:[]}};close();
+  const out=[];let r=null;const close=()=>{if(r)out.push(r);r={H:[],B:[]}};close();
   for(const m of marks){
-    if(m.type==='H'){if(r.V!=null||r.M!=null||r.F!=null)close();r.H.push(m.t)}
+    if(m.type==='H'){if(r.V!=null||r.M!=null||r.F!=null)close();r.H.push(m.t);r.B.push(m.bh)}
     else if(m.type==='V'){if(r.V!=null||r.M!=null||r.F!=null)close();r.V=m.t}
     else if(m.type==='M'){if(r.M!=null||r.F!=null)close();r.M=m.t}
     else{if(r.F!=null)close();r.F=m.t}
@@ -209,9 +210,12 @@ function reps(){
   return out.filter(r=>r.H.length||r.V!=null||r.M!=null||r.F!=null).map(r=>{
     const d=(a,b)=>a!=null&&b!=null?b-a:null;
     return{start:Math.min(...[r.H[0],r.V,r.M,r.F].filter(x=>x!=null)),extra:Math.max(0,r.H.length-1),
-      react:d(r.H[0],r.V),vm:d(r.V,r.M),mf:d(r.M,r.F),vf:d(r.V,r.F),hasM:r.M!=null};
+      bh:bhJoin(r.B),react:d(r.H[0],r.V),vm:d(r.V,r.M),mf:d(r.M,r.F),vf:d(r.V,r.F),hasM:r.M!=null};
   });
 }
+/* undefined = nicht geprüft, null = nicht auswertbar, '' = keine Körperhilfe, sonst Liste */
+function bhJoin(B){const a=B.filter(x=>x!==undefined);if(!a.length)return undefined;const f=[...new Set(a.filter(Boolean).flatMap(x=>x.split(', ')))];return f.length?f.join(', '):a.some(x=>x==='')?'':null}
+const bhText=b=>b===undefined?'–':b===null?'n. a.':b===''?'keine':b;
 const grade=x=>x==null?'':x<0?'bad':x<=.5?'good':x<=1?'warn':'bad';
 
 /* ---------- Auswertung ---------- */
@@ -220,7 +224,7 @@ function render(){
   R.forEach((r,i)=>{
     const key=r.hasM?r.vm:r.vf,tr=document.createElement('tr');
     tr.innerHTML=`<td>${i+1}</td><td>${clock(r.start)}</td><td class="${r.extra?'bad':''}">${r.extra||'–'}</td><td>${fmt(r.react)}</td>`+
-      `<td class="${r.hasM?grade(r.vm):''}">${fmt(r.vm)}</td><td class="${r.hasM?'':grade(r.vf)}">${r.hasM?fmt(r.mf):fmt(r.vf)+' ab Verh.'}</td>`;
+      `<td class="${r.hasM?grade(r.vm):''}">${fmt(r.vm)}</td><td class="${r.hasM?'':grade(r.vf)}">${r.hasM?fmt(r.mf):fmt(r.vf)+' ab Verh.'}</td><td class="${r.bh?'bad':r.bh===''?'good':''}">${bhText(r.bh)}</td>`;
     tr.onclick=()=>{v.currentTime=Math.max(0,r.start-.5)};tb.appendChild(tr);
   });
   $('summary').innerHTML=summary(R).map(p=>`<p>${p}</p>`).join('');
@@ -241,6 +245,8 @@ function summary(R){
   if(rx!=null)out.push(`Der Hund reagiert im Mittel ${fmt(rx)} nach dem ersten Hörzeichen. Dieser Wert eignet sich für den Wochenvergleich.`);
   const ex=R.filter(r=>r.extra).length;
   if(ex)out.push(`In <b class="bad">${ex}</b> Wiederholung${ex>1?'en':''} hast du das Hörzeichen mehrfach gegeben. Im Ring kostet jedes Zusatzkommando Noten.`);
+  const bq=marks.filter(m=>m.type==='H'&&m.bh!==undefined&&m.bh!==null),bf=bq.filter(m=>m.bh);
+  if(bq.length)out.push(bf.length?`Bei <b class="bad">${bf.length} von ${bq.length}</b> geprüften Hörzeichen hat sich dein Körper mitbewegt (${[...new Set(bf.flatMap(r=>r.bh.split(', ')))].join(', ')}). Im Ring gilt das als Körperhilfe.`:`Bei allen ${bq.length} geprüften Hörzeichen blieb dein Körper ruhig.`);
   if(hints.length){
     const c={};hints.forEach(h=>{const k=h.text.split(':')[0];c[k]=(c[k]||0)+1});
     out.push('Live-Hinweise in dieser Einheit: '+Object.entries(c).map(([k,n])=>`${n}× ${k}`).join(', ')+'.');
@@ -305,9 +311,119 @@ async function download(name,text,type){
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();
 }
 const num=x=>x==null?'':x.toFixed(3);
-$('csv').onclick=()=>download('timing.csv','Nr;Beginn_s;Zusatzsignale;Signal_Verhalten_s;Verhalten_Marker_s;Marker_Futter_s;Verhalten_Futter_s\n'+
-  reps().map((r,i)=>[i+1,num(r.start),r.extra,num(r.react),num(r.vm),num(r.mf),num(r.vf)].join(';')).join('\n'),'text/csv');
+$('csv').onclick=()=>download('timing.csv','Nr;Beginn_s;Zusatzsignale;Signal_Verhalten_s;Verhalten_Marker_s;Marker_Futter_s;Verhalten_Futter_s;Koerperhilfe\n'+
+  reps().map((r,i)=>[i+1,num(r.start),r.extra,num(r.react),num(r.vm),num(r.mf),num(r.vf),bhText(r.bh)].join(';')).join('\n'),'text/csv');
 $('json').onclick=()=>download('marken.json',JSON.stringify({marks,hints},null,1),'application/json');
+
+/* ---------- Körperhilfen (Pose-Erkennung auf dem Gerät) ---------- */
+let pose=null,ref=null,pickMode=false,busy=false;
+const pc=document.createElement('canvas'),pg=pc.getContext('2d',{willReadFrequently:true});
+const BH={head:['Kopf',.15],handL:['Hand',.3],handR:['Hand',.3],lean:['Oberkörper',8],shW:['Schultern',.18]};
+const mid=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
+const center=p=>mid(mid(p[11],p[12]),mid(p[23],p[24]));
+const torso=p=>{const a=mid(p[11],p[12]),b=mid(p[23],p[24]);return Math.hypot(a.x-b.x,a.y-b.y)||1};
+const colDist=(a,b)=>!a||!b?1:Math.hypot(a[0]-b[0],a[1]-b[1])*3+Math.abs(a[2]-b[2])*.5;
+async function loadPose(){
+  if(pose)return pose;
+  status('Pose-Modell wird geladen …');
+  const {PoseLandmarker,FilesetResolver}=await import('./vendor/vision_bundle.mjs');
+  const fs=await FilesetResolver.forVisionTasks('./vendor/wasm');
+  const mk=d=>PoseLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:'./vendor/pose_landmarker_full.task',delegate:d},runningMode:'IMAGE',numPoses:3,minPoseDetectionConfidence:.3,minPosePresenceConfidence:.3});
+  try{pose=await mk('GPU')}catch{pose=await mk('CPU')}
+  return pose;
+}
+/* springt zu t und wartet, bis das Bild wirklich da ist */
+function grab(t){return new Promise(r=>{let d=false;const f=()=>{if(!d){d=true;r()}};
+  v.addEventListener('seeked',()=>{if(v.requestVideoFrameCallback)v.requestVideoFrameCallback(f);setTimeout(f,150)},{once:true});
+  setTimeout(f,1500);v.currentTime=Math.min(Math.max(0,t),Math.max(0,dur()-.05))})}
+function torsoColor(p,sx,sy){
+  let r=0,g=0,b=0,n=0;
+  for(const [a,c] of [[.3,.3],[.5,.3],[.7,.3],[.3,.6],[.5,.6],[.7,.6],[.5,.45]]){
+    const tx=p[11].x+(p[12].x-p[11].x)*a,ty=p[11].y+(p[12].y-p[11].y)*a,bx=p[23].x+(p[24].x-p[23].x)*a,by=p[23].y+(p[24].y-p[23].y)*a;
+    const x=Math.round(tx+(bx-tx)*c-sx),y=Math.round(ty+(by-ty)*c-sy);
+    if(x<0||y<0||x>=pc.width||y>=pc.height)continue;
+    const d=pg.getImageData(x,y,1,1).data;r+=d[0];g+=d[1];b+=d[2];n++;
+  }
+  if(!n)return null;const s=r+g+b+1;return[r/s,g/s,s/(n*765)];
+}
+/* Posen in einem Bildausschnitt, Koordinaten in Video-Pixeln */
+function detectIn([sx,sy,sw,sh]){
+  pc.width=sw;pc.height=sh;pg.drawImage(v,sx,sy,sw,sh,0,0,sw,sh);
+  return pose.detect(pc).landmarks.map(l=>{const p=l.map(k=>({x:k.x*sw+sx,y:k.y*sh+sy,v:k.visibility??1}));p.col=torsoColor(p,sx,sy);return p});
+}
+/* Im Vollbild gehen kleine und mehrere Personen verloren, deshalb drei überlappende Ausschnitte */
+function locate(){
+  const W=v.videoWidth,H=v.videoHeight,tw=Math.round(W/2),all=[];
+  for(const c of W>H?[[0,0,tw,H],[Math.round(W/4),0,tw,H],[W-tw,0,tw,H]]:[[0,0,W,H]])
+    for(const p of detectIn(c)){const a=center(p);if(!all.some(q=>Math.hypot(center(q).x-a.x,center(q).y-a.y)<torso(p)))all.push(p)}
+  return all;
+}
+function pick(ps,near){
+  let best=null,bs=1e9;
+  for(const p of ps){
+    const c=center(p),s=(ref?colDist(p.col,ref.col):-torso(p)/1e4)+(near?Math.min(1,Math.hypot(c.x-near.x,c.y-near.y)/(torso(p)*4)):0);
+    if(s<bs){bs=s;best=p}
+  }
+  return best;
+}
+function feat(p){
+  const sm=mid(p[11],p[12]),hm=mid(p[23],p[24]),T=torso(p),rel=(k,o)=>p[k].v>=.5?[(p[k].x-o.x)/T,(p[k].y-o.y)/T]:null;
+  return{head:rel(0,sm),handL:rel(15,hm),handR:rel(16,hm),lean:[Math.atan2(sm.x-hm.x,hm.y-sm.y)*180/Math.PI],shW:[Math.hypot(p[11].x-p[12].x,p[11].y-p[12].y)/T]};
+}
+/* Vergleich: Ruhe vor dem Hörzeichen (-1,0 bis -0,35 s) gegen Bewegung beim Hörzeichen (-0,3 bis +0,6 s) */
+function judge(fr){
+  const flags=new Set();let judged=0;
+  for(const k in BH){
+    const base=fr.filter(f=>f.t<-.35&&f.f[k]).map(f=>f.f[k]),cue=fr.filter(f=>f.t>=-.3&&f.f[k]).map(f=>f.f[k]);
+    if(base.length<4||cue.length<5)continue;judged++;
+    const b=base[0].map((_,i)=>median(base.map(x=>x[i]))),dist=x=>Math.hypot(...x.map((q,i)=>q-b[i]));
+    const s=Math.max(...base.map(dist)),d=cue.map(dist).sort((x,y)=>y-x)[1];
+    if(d>BH[k][1]&&d>2.5*s)flags.add(BH[k][0]);
+  }
+  return judged?[...flags].join(', '):null;
+}
+async function bodyAt(t0){
+  await grab(t0);const me=pick(locate());if(!me)return null;
+  const W=v.videoWidth,H=v.videoHeight,ys=me.map(k=>k.y),bh=Math.max(...ys)-Math.min(...ys),c=center(me),cy=(Math.max(...ys)+Math.min(...ys))/2;
+  const sw=Math.round(Math.min(W,Math.max(bh*3,320))),sh=Math.round(Math.min(H,Math.max(bh*1.6,320)));
+  const crop=[Math.round(Math.min(W-sw,Math.max(0,c.x-sw/2))),Math.round(Math.min(H-sh,Math.max(0,cy-sh/2))),sw,sh];
+  const fr=[];let last=c;
+  for(let t=t0-1;t<=t0+.601;t+=1/15){
+    if(t<0)continue;await grab(t);
+    const p=pick(detectIn(crop),last);if(!p)continue;
+    last=center(p);fr.push({t:t-t0,f:feat(p)});
+  }
+  return judge(fr);
+}
+async function runBody(){
+  if(busy)return;
+  const Hs=marks.filter(m=>m.type==='H');
+  if(!Hs.length){status('Setze zuerst Hörzeichen (H). Die Körperhilfen werden rund um jedes Hörzeichen geprüft.');return}
+  if(!ref){pickMode=true;v.pause();status('Such ein Bild, in dem du gut zu sehen bist, und tippe im Video auf deinen Oberkörper. So unterscheidet die App dich von anderen Personen.');return}
+  busy=true;v.pause();const back=v.currentTime;
+  try{
+    await loadPose();
+    for(let i=0;i<Hs.length;i++){status(`Körperhilfen: Hörzeichen ${i+1} von ${Hs.length} …`);Hs[i].bh=await bodyAt(Hs[i].t)}
+    save();render();await grab(back);
+    const na=Hs.filter(m=>m.bh===null).length;
+    status(`Körperhilfen geprüft: ${Hs.filter(m=>m.bh).length} von ${Hs.length} Hörzeichen mit Bewegung`+(na?`, ${na} nicht auswertbar (Person nicht erkannt oder verdeckt).`:'.'));
+  }catch(e){status('Die Pose-Erkennung konnte nicht gestartet werden.')}
+  busy=false;
+}
+async function pickSelf(e){
+  const r=v.getBoundingClientRect(),W=v.videoWidth,H=v.videoHeight,k=Math.min(r.width/W,r.height/H);
+  const x=(e.clientX-r.left-(r.width-W*k)/2)/k,y=(e.clientY-r.top-(r.height-H*k)/2)/k;
+  pickMode=false;
+  try{await loadPose()}catch(err){status('Die Pose-Erkennung konnte nicht gestartet werden.');return}
+  const old=ref;ref=null;const ps=locate();
+  if(!ps.length){ref=old;pickMode=true;status('In diesem Bild wurde keine Person erkannt. Such ein Bild, in dem du gut zu sehen bist, und tippe noch einmal.');return}
+  const me=pick(ps,{x,y});ref={col:me.col};save();
+  status('Gemerkt. '+(ps.length>1?ps.length+' Personen im Bild, du bist die angetippte.':'Eine Person im Bild.'));
+  if(marks.some(m=>m.type==='H'))runBody();
+}
+v.addEventListener('click',e=>{if(pickMode)pickSelf(e)});
+$('bodyBtn').onclick=runBody;
+$('pickBtn').onclick=()=>{pickMode=true;v.pause();status('Tippe im Video auf deinen Oberkörper.')};
 
 /* ---------- Live-Training ---------- */
 const liveTime=()=>(performance.now()-live.t0)/1000;
@@ -378,7 +494,7 @@ $('liveBtn').onclick=()=>live?stopLive():startLive();
 /* ---------- Start ---------- */
 const src=new URLSearchParams(location.search).get('src');
 if(src)fetch(src).then(r=>r.blob()).then(b=>loadBlob(b,src));
-window.tc={get cands(){return cands},get marks(){return marks},get hints(){return live?live.hints:hints},reps,addMark,onWord,
+window.tc={get cands(){return cands},get marks(){return marks},get hints(){return live?live.hints:hints},reps,addMark,onWord,runBody,pickSelf,get busy(){return busy},get ref(){return ref},
   fakeLive(){live={ev:[],hints:[],t0:performance.now()}},endFake(){hints=live.hints;live=null;render()},clear(){marks=[];render()}};
 requestAnimationFrame(tick);
 </script>
